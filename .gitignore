@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# 环境
+.venv/
+venv/
+miniconda3/
+envs/
+
+# 数据
+data/*/
+
+# 模型结果
+**/results/
+**/save/
+**/fk_surrogate/
+**/best_model.pt
+**/scaler.pkl
+**/history.json
+
+# 可视化
+**/*.png
+**/*.gif
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ROS2
+log/
+build/
+install/
+
+# 系统
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# 大文件
+**/episode_*.parquet
+**/episode_*.csv

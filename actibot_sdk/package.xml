@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>actibot_sdk</name>
+  <version>1.0.0</version>
+  <description>actibot sdk library</description>
+  <maintainer email="yong.ling@acti.bot">Yong Ling</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>actibot_can</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

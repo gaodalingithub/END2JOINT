@@ -1,0 +1,59 @@
+can_id:
+  # auto(自动选择平台, 不需配置具体id), manual(需手动配置) 
+  platform: auto  
+  left_arm: can1_fd
+  right_arm: can2_fd
+  body: can3   # 如果没有，则填null 
+  chassis: null 
+
+
+# 0: 推缸升降 1: 导轨 2: 折叠
+lift_type: 0  
+
+# 0：无夹爪 1: 二指夹爪
+gripper_type: 1  
+
+# 0: 无力传感器 1: 六维力传感器
+force_sensor_type: 0  
+force_sensor_port: "/dev/ttyUSB0" 
+
+control_params: 
+  arm:
+    mode: "MIT"  # MIT: 位置速度力矩控制(可配置PID参数) POS: 位置速度模式(默认PID参数)
+    ## MIT参数
+    Kp: [120, 60, 60, 90, 30, 30, 30]
+#    Kp: [240, 120, 120, 180, 90, 90, 90]
+    Kd: [2, 2, 2, 2, 1, 1, 1]
+    ## POS参数 最大速度
+    VEL: [15, 15, 15, 15, 15, 15, 15]
+
+
+  gripper:
+    Kp: [3, 3]
+    Kd: [1, 1]
+
+  waist:
+    mode: "POS" # MIT: 位置速度力矩控制(可配置PID参数) POS: 位置速度模式(默认参数)
+    ## MIT参数
+    Kp: [300, 300, 15, 15]
+    Kd: [2, 2, 1, 1]
+    ## POS参数 最大速度
+    VEL: [1.5, 1.5, 1.5, 1.5]
+
+init_arm_position: [0.5, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, -0.5, 0.0, 0.0, -0.5, 0.0, 0.0, 0.0]  # 初始手臂位置
+auto_gravity_compensation: true  # 是否自动做重力补偿
+move_protect: true  # 移动过程中是否做保护, 如果运动控制幅度过大自动做插值保护
+move_protect_clip_value: [0.15, 0.15, 0.15, 0.25, 0.5, 0.5, 0.5]  # 移动保护的幅度限制 肩部到腕部7个关节
+urdf_path: 'robot_description/v3/urdf/v3_urdf_251121-2.urdf'
+
+emergency_stop_param:
+  emergency_stop: false  # 是否碰撞时紧急停止,碰撞后会立即停止手臂运动，并保持当前手臂位置
+  emergency_stop_time: 0.1  # 碰撞持续时间 
+  # 手臂力矩限制，重力以外的力矩超过以下绝对值时和倍数时紧急停止
+  arm_effort_limit_value: [6.0, 6.0, 5.0, 4.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0, 5.0, 4.0, 4.0, 4.0]
+  # arm_effort_limit_time: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+
+zero_force_control_param:
+  zero_force_control: true  # 是否启用零力控制
+  # zero_force_control_value: [2.0, 2.0, 2.0, 1.5, 0.5, 0.5, 0.5, 0.2]  # 零力控制死区 臂7个关节+夹爪1个关节
+  zero_force_control_value: [5.0, 4.0, 3.0, 3.0, 1.0, 1.0, 1.0, 0.2]  # 零力控制死区 臂7个关节+夹爪1个关节

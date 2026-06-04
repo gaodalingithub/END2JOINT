@@ -1,0 +1,61 @@
+
+# VR 遥操作参数（teleop_vr.py 读取；integrated 模式由 actibot_ros.py 调用 step()）
+teleop:
+  control_arm: true                # 控制双臂
+  control_chassis: false           # 控制底盘
+  control_waist: false            # 控制腰部
+  control_lift: true             # 控制升降
+  max_controller_jump_m: 0.10       # VR 突变保护：相邻两帧手柄平移超过该值（米）则丢弃该帧
+  # 仿真/实机与模型
+  use_sim: False              # True 为仿真（仅可视化），False 连接真机
+  dt: 0.02                          # 主循环周期（秒）
+  arm_step_limit_rad: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]          # 实机手臂每周期最大关节变化（弧度），超限则分段限幅下发
+  lock_waist_zero_when_disabled: true # control_waist=false 时是否持续锁腰到 0 位；takeover 场景建议设为 false 以避免突
+  ik_solver_mode: single            # dual / single
+  arm_control_mode: both            # both / left_only / right_only
+  # 功能开关
+
+
+# IK/URDF 配置（更换 URDF 时只改这一段）
+ik:
+  urdf_path: 'robot_description/v3/urdf/v3_urdf_251121-2.urdf' # 默认同 teleop
+  ik_type: casadi                      # IK 求解器类型：dls / casadi
+  waist_dof: 2                           # 腰部自由度数
+  lock_joints:
+      - up_down_joint
+      - head_yaw_joint
+      - head_pitch_joint
+      - left_gripper_a_joint
+      - left_gripper_b_joint
+      - right_gripper_a_joint
+      - right_gripper_b_joint
+  # DLS parm
+  # 姿态误差限幅与权重
+  max_ori_err: 1            # 单步最大姿态误差，过大易抖，肘抖时可适当减小
+  ori_weights: [1, 1, 1]    # 姿态各轴权重，roll 已在任务权重中单独压低
+
+  # 任务空间权重
+  enable_task_weights: True   # 关闭表示整体用默认权重，先稳住再考虑打开
+  w_pos: 1.0                   # 末端位置权重，一般不用动
+  w_rot_task: [0.3, 0.3, 0.1]  # 姿态权重，roll 最小，用来抑制翻腕
+
+  # 单臂关节任务权重（J1..J7）
+  joint_task_weights: [0.8, 0.8, 0.3, 0.5, 1.5, 1.2, 1.0]
+  # 肩权重偏小减少大幅摆臂，肘/腕偏大更像人
+
+  # 肘部 null-space 软约束（VR 世界系）
+  elbow_frame_left: left_elbow_roll_joint5
+  elbow_frame_right: right_elbow_roll_joint5
+  elbow_null_gain: 0.5            # 肘引导强度，过大易追 VR 噪声导致抖动
+  elbow_null_weight_pos: 0.3      # 肘位置权重，主要起作用的量，建议偏小
+  elbow_null_weight_rot: 0.1      # 肘姿态权重，噪声大，一般不建议加
+  # 经验：elbow_null_gain * elbow_null_weight_pos 不宜过大（≈0.05~0.1）
+  # 手举高肘抖时，优先降 elbow_null_gain / weight_pos，而不是加
+
+  # 末端 frame 配置（parent 关节名和相对偏置）
+  ee_parent_left: left_wrist_pitch_joint7
+  ee_parent_right: right_wrist_pitch_joint7
+  ee_offset_left: [0.15, -0.02, 0.0]     # xyz 偏置，单位：米
+  ee_offset_right: [0.15, 0.02, 0.0]
+  ee_frame_left: left_end_joint          # 新建的末端 frame 名称
+  ee_frame_right: right_end_joint

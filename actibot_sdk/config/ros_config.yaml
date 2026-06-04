@@ -1,0 +1,54 @@
+actibot_ros:
+  topics:
+    state:
+      arm: "actibot_arm_state"
+      body: "actibot_body_state"
+      lift: "actibot_lift_state"
+      chassis: "actibot_chassis_state"
+      force_sensor_left: "left_force_sensor_state" # 仅在有力传感器时有效
+      force_sensor_right: "right_force_sensor_state" # 仅在有力传感器时有效
+    ctrl:
+      arm: "actibot_arm_ctrl"
+      body: "actibot_body_ctrl"
+      lift: "actibot_lift_ctrl"
+      chassis: "actibot_chassis_ctrl"
+
+  services:
+    init_robot: "init_robot"
+    deinit_robot: "deinit_robot"
+    fold_robot: "fold_robot"  # 仅支持折叠机器人
+    close_actibot_ros_node: "close_actibot_ros_node"
+    set_zero_force_mode: "set_zero_force_mode"  # 零力拖动模式开关
+
+teleop:  
+  topics:
+    arm: "actibot_arm_ctrl"        
+    body: "actibot_body_ctrl"      
+    lift: "actibot_lift_ctrl"
+    chassis: "actibot_chassis_ctrl" 
+    joy_state: "teleop/joy"
+    status: "teleop/status"
+  services: 
+    start_teleop: "teleop/start_teleop"
+
+vla:
+  topics:
+    arm: "vla/arm_ctrl"
+    body: "vla/body_ctrl"
+    lift: "vla/lift_ctrl"
+    chassis: "vla/chassis_ctrl"
+    
+application:
+  topics:
+    mode_state: "application/mode_state"
+  services:
+    unfold_robot: "application/unfold_robot"
+    fold_robot: "application/fold_robot" 
+    wave_hand: "application/wave_hand"
+    stretch_hand: "application/stretch_hand"
+    set_teleop: "application/set_teleop"
+    set_vla: "application/set_vla"
+    set_action: "application/set_action"
+    stop: "application/stop"
+    close_application_node: "application/close_application_node"
+
