@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""推理测试：加载训练好的模型，测量推理速度和精度。
+"""自回归推理 + 精度评估 + 结果保存。
+
+自回归模式：当前步的预测关节角作为下一步的 prev_joints 输入，模拟实际部署场景。
 
 用法:
   conda activate actibot_sdk
-  python ik_net_robust/predict.py                    # 测试集评估 + 速度
-  python ik_net_robust/predict.py --fkfix            # 启用 FK 修正
-  python ik_net_robust/predict.py --time-only        # 只测速度
-  python ik_net_robust/predict.py --count 1000       # 只测前 1000 帧
-  python ik_net_robust/predict.py --data /path/to/data  # 指定数据集
+  python ik_net_robust/predict.py                        # 自回归精度 + 速度
+  python ik_net_robust/predict.py --fkfix                # 启用 FK 修正（每帧）
+  python ik_net_robust/predict.py --fkfix --fkfix-step 5  # 每 5 帧修正一次
+  python ik_net_robust/predict.py --data /path/to/data   # 指定数据集
+  python ik_net_robust/predict.py --save ./results       # 保存预测结果
+  python ik_net_robust/predict.py --time-only            # 只测速度
+  python ik_net_robust/predict.py --count 1000           # 只测前 1000 帧
+
+  python ik_net_robust/predict.py --data data/0602_test_for_net_action_fk --save ik_net_robust/save/0602_test_for_net_action_fk_results
+  python ik_net_robust/predict.py --fkfix --fkfix-step 5 --data data/0602_test_for_net_action_fk --save ik_net_robust/save/0602_test_for_net_action_fk_results_correct_5
 """
 import os
 import sys
@@ -39,7 +46,9 @@ def main():
     parser.add_argument("--time-only", action="store_true", help="只测推理速度")
     parser.add_argument("--count", type=int, default=None, help="只处理前 N 帧")
     parser.add_argument("--fkfix", action="store_true", help="启用 FK 修正")
+    parser.add_argument("--fkfix-step", type=int, default=1, help="FK 修正间隔帧数（默认1=每帧修正，5=每5帧修正一次）")
     parser.add_argument("--data", default=None, help="数据集路径")
+    parser.add_argument("--save", default=None, help="保存预测结果到指定目录（parquet 格式）")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -111,7 +120,8 @@ def main():
 
     # 精度评估（自回归模式）
     print(f"\n{'='*50}")
-    print(f"精度评估 (自回归模式{' + FK修正' if args.fkfix else ''})")
+    fkfix_label = f" + FK修正(每{args.fkfix_step}帧)" if args.fkfix and args.fkfix_step > 1 else (" + FK修正" if args.fkfix else "")
+    print(f"精度评估 (自回归模式{fkfix_label})")
     print('='*50)
 
     q_preds = np.zeros_like(joint_data)
@@ -127,7 +137,7 @@ def main():
             pn = model(torch.tensor(X_n, dtype=torch.float32, device=device)).cpu().numpy()
         q_pred = scaler.inverse_y(pn)[0]
 
-        if args.fkfix and t > 0:
+        if args.fkfix and t > 0 and (t % args.fkfix_step == 0):
             t0 = time.perf_counter()
             qL, qR, _, _ = fk_correction(ik, q_pred, ee[0])
             fk_time += time.perf_counter() - t0
@@ -161,6 +171,34 @@ def main():
     print(f"\n各关节 MAE (°):")
     for name, err in zip(jn, per_joint):
         print(f"  {name:>15s}: {err:.3f}")
+
+    # ── 保存预测结果 ──
+    if args.save:
+        os.makedirs(args.save, exist_ok=True)
+        jn = data_config["col_joints_l"] + data_config["col_joints_r"]
+
+        meta_cols = ["episode_index", "frame_index", "timestamp", "gripper_L", "gripper_R"]
+        meta_dfs = []
+        if args.count:
+            meta_dfs.append(pd.read_parquet(files[0])[meta_cols].iloc[:args.count])
+        else:
+            for f in files:
+                meta_dfs.append(pd.read_parquet(f)[meta_cols])
+        meta = pd.concat(meta_dfs, ignore_index=True)
+
+        out_df = pd.DataFrame(index=range(n_total))
+        out_df["episode_index"] = meta["episode_index"].values
+        out_df["frame_index"]   = meta["frame_index"].values
+        out_df["timestamp"]     = meta["timestamp"].values
+        for i, j in enumerate(jn):
+            out_df[j] = q_preds[:, i]
+        if "gripper_L" in meta.columns and "gripper_R" in meta.columns:
+            out_df["gripper_L"] = meta["gripper_L"].values
+            out_df["gripper_R"] = meta["gripper_R"].values
+
+        out_path = os.path.join(args.save, "predictions.parquet")
+        out_df.to_parquet(out_path, index=False)
+        print(f"\n预测结果: {out_path}  ({n_total} 帧)")
 
     print(f"\nDone.")
 

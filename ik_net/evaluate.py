@@ -110,7 +110,7 @@ def main():
     episodes = load_episode_files(paths["data_dir"])
 
     # ── 加载模型 ──
-    ckpt_path = os.path.join(paths["results_dir"], "best_model.pt")
+    ckpt_path = os.path.join(paths["results_dir"], hp.get("ckpt_name", "best_model.pt"))
     if not os.path.exists(ckpt_path):
         print(f"错误: 未找到模型文件 {ckpt_path}")
         print("请先运行 train.py")

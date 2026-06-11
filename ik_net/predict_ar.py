@@ -48,7 +48,7 @@ def main():
 
     # ── 加载模型 ──
     ckpt_dir = hp.get("ckpt_dir", paths["results_dir"])
-    ckpt_path = os.path.join(ckpt_dir, "best_model.pt")
+    ckpt_path = os.path.join(ckpt_dir, hp.get("ckpt_name", "best_model.pt"))
     if not os.path.exists(ckpt_path):
         print(f"错误: 未找到模型 {ckpt_path}")
         return

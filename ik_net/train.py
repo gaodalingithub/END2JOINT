@@ -175,7 +175,7 @@ def main():
             best_joint_deg, best_epoch = joint_deg, epoch
             torch.save({"epoch": epoch, "model_state_dict": model.state_dict(),
                         "val_loss": val_result["loss"], "joint_mae_deg": joint_deg},
-                       os.path.join(paths["results_dir"], "best_model.pt"))
+                       os.path.join(paths["results_dir"], hp.get("ckpt_name", "best_model.pt")))
             with open(os.path.join(paths["results_dir"], "scaler.pkl"), "wb") as f:
                 pickle.dump(scaler, f)
             break
@@ -193,7 +193,7 @@ def main():
                 "joint_mae_deg": joint_deg,
                 "fk_pos_err_mean": val_result.get("fk_pos_err_mean", 0.0),
                 "fk_ori_err_mean": val_result.get("fk_ori_err_mean", 0.0),
-            }, os.path.join(paths["results_dir"], "best_model.pt"))
+            }, os.path.join(paths["results_dir"], hp.get("ckpt_name", "best_model.pt")))
             # Scaler 单独保存（torch.load 无法反序列化非 torch 对象）
             with open(os.path.join(paths["results_dir"], "scaler.pkl"), "wb") as f:
                 pickle.dump(scaler, f)
@@ -210,7 +210,7 @@ def main():
 
     # ── 测试集评估 ──
     print("\n测试集评估...")
-    checkpoint = torch.load(os.path.join(paths["results_dir"], "best_model.pt"), map_location=device,
+    checkpoint = torch.load(os.path.join(paths["results_dir"], hp.get("ckpt_name", "best_model.pt")), map_location=device,
                             weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     test_result = evaluate(test_loader, model, scaler, device, ik=ik)

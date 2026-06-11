@@ -30,6 +30,7 @@ hp = {
     "patience": 100,             # 早停容忍轮数
     "target_joint_deg": 0.1,    # 目标关节角平均误差（度），达标即停
     "ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/results",  # 模型权重 + 归一化参数路径
+    "ckpt_name": "best_model.pt",   # 模型保存文件名
 
     # ── 数据划分 ──
     "train_ratio": 0.8,
