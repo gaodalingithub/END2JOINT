@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """推理测试：加载训练好的模型，测量推理速度和精度，保存预测结果。
 
+数据文件由 compute_fk_action.py 生成，单文件包含 ee + state + action。
+
 用法:
   conda activate actibot_sdk
-  python ik_net/predict.py                          # 完整测试集评估
+  python ik_net/predict.py                          # 默认数据集
   python ik_net/predict.py --time-only              # 只测推理速度
   python ik_net/predict.py --count 1000             # 只测前 1000 帧
-  python ik_net/predict.py --data /path/to/data --save ./results  # 指定数据+保存结果
-  python ik_net/predict.py --data data/0602_test_for_net_action_fk --save ik_net/save/0616_test_for_net_action_fk_results_moredata
+  python ik_net/predict.py --save ./results         # 保存预测结果
+  python ik_net/predict.py --data /path/to/data     # 指定数据集
+
+  python ik_net/predict.py --data data/0602_test_for_net_action_fk --save ik_net/save/0602_test_for_net_action_fk_results
 """
 import os
 import sys
@@ -28,14 +32,15 @@ from model import ResidualMLP
 from fk_utils import load_ik, compute_ee_pose
 
 EE_COLS = data_config["col_eeL"] + data_config["col_eeR"]
-JOINT_COLS = data_config["col_joints_l"] + data_config["col_joints_r"]
+ACTION_COLS = data_config["col_action_l"] + data_config["col_action_r"]
+STATE_COLS  = data_config["col_state_l"] + data_config["col_state_r"]
 
 
 def main():
     parser = argparse.ArgumentParser(description="IK-Net 推理测试")
     parser.add_argument("--time-only", action="store_true", help="只测推理速度，不评估精度")
     parser.add_argument("--count", type=int, default=None, help="只处理前 N 帧")
-    parser.add_argument("--data", default=None, help="数据文件夹路径（默认: config 中的 data_dir）")
+    parser.add_argument("--data", default=None, help="数据文件夹路径（含 ee + state + action 的 FK 结果）")
     parser.add_argument("--save", default=None, help="保存预测结果到指定目录（parquet 格式）")
     args = parser.parse_args()
 
@@ -60,27 +65,31 @@ def main():
     model.eval()
     print(f"模型加载完成 (epoch {ckpt['epoch']})")
 
-    # ── 加载数据 ──
+    # ── 加载数据（单文件：ee + state + action）──
     import glob
     import pandas as pd
     data_dir = args.data or paths["data_dir"]
     files = sorted(glob.glob(os.path.join(data_dir, "episode_*_fk.parquet")))
+    if not files:
+        print(f"未找到数据: {data_dir}"); return
 
     if args.count:
         df = pd.read_parquet(files[0])
         ee_data = df[EE_COLS].values.astype(np.float64)[:args.count]
-        joint_data = df[JOINT_COLS].values.astype(np.float64)[:args.count]
+        state_data = df[STATE_COLS].values.astype(np.float64)[:args.count]
+        action_data = df[ACTION_COLS].values.astype(np.float64)[:args.count]
     else:
         frames = [pd.read_parquet(f) for f in files]
         ee_data = np.vstack([f[EE_COLS].values.astype(np.float64) for f in frames])
-        joint_data = np.vstack([f[JOINT_COLS].values.astype(np.float64) for f in frames])
+        state_data = np.vstack([f[STATE_COLS].values.astype(np.float64) for f in frames])
+        action_data = np.vstack([f[ACTION_COLS].values.astype(np.float64) for f in frames])
 
     n_total = len(ee_data)
     print(f"数据: {n_total} 帧")
 
-    # 构造 26D 输入: ee_12 + prev_joints_14
-    joints_prev = np.vstack([joint_data[0:1], joint_data[:-1]])
-    X_raw = np.hstack([ee_data, joints_prev])  # (n, 26)
+    # 构造 26D 输入: ee_12 + state_prev_14
+    state_prev = np.vstack([state_data[0:1], state_data[:-1]])
+    X_raw = np.hstack([ee_data, state_prev])  # (n, 26)
 
     X_norm = scaler.transform_X(X_raw)
     X_tensor = torch.tensor(X_norm, dtype=torch.float32, device=device)
@@ -123,7 +132,7 @@ def main():
         with torch.no_grad():
             pred_norm = model(X_tensor).cpu().numpy()
         q_pred = scaler.inverse_y(pred_norm)
-        q_gt = joint_data
+        q_gt = action_data
 
         # 关节角误差
         abs_err = np.abs(q_pred - q_gt)
@@ -138,7 +147,7 @@ def main():
         print(f"  R²:   {max(0, 1 - np.sum(abs_err**2) / np.sum((q_gt - q_gt.mean(0))**2)):.4f}")
 
         # 各关节 MAE
-        jn = data_config["col_joints_l"] + data_config["col_joints_r"]
+        jn = data_config["col_action_l"] + data_config["col_action_r"]
         per_joint = np.mean(abs_err, axis=0) * 180.0 / np.pi
         print(f"\n各关节 MAE (°):")
         for name, err in zip(jn, per_joint):
@@ -163,7 +172,7 @@ def main():
     if args.save:
         os.makedirs(args.save, exist_ok=True)
         import pandas as pd
-        jn = data_config["col_joints_l"] + data_config["col_joints_r"]
+        jn = data_config["col_action_l"] + data_config["col_action_r"]
 
         meta_cols = ["episode_index", "frame_index", "timestamp", "gripper_L", "gripper_R"]
         meta_dfs = []

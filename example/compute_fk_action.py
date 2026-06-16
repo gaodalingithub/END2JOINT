@@ -13,7 +13,8 @@
 
 示例:
   python example/compute_fk_action.py data/0525_workflow_120
-  python example/compute_fk_action.py data/0602_test_for_net -o results/fk_action_results
+  python example/compute_fk_action.py data/0525_workflow_120 -o data/0525_workflow_120_action_fk
+  python example/compute_fk_action.py data/0602_test_for_net -o data/0602_test_for_net_action_fk
   python example/compute_fk_action.py data/0602_test_for_net --format csv
 """
 import sys, os, glob, argparse
@@ -37,15 +38,19 @@ COL_JOINTS_L = [f"L_{n}" for n in ("sh_pitch","sh_roll","sh_yaw",
                                     "el_pitch","el_roll","wr_yaw","wr_pitch")]
 COL_JOINTS_R = [f"R_{n}" for n in ("sh_pitch","sh_roll","sh_yaw",
                                     "el_pitch","el_roll","wr_yaw","wr_pitch")]
+COL_STATE_L  = [f"state_{n}" for n in ("L_sh_pitch","L_sh_roll","L_sh_yaw",
+                     "L_el_pitch","L_el_roll","L_wr_yaw","L_wr_pitch")]
+COL_STATE_R  = [f"state_{n}" for n in ("R_sh_pitch","R_sh_roll","R_sh_yaw",
+                     "R_el_pitch","R_el_roll","R_wr_yaw","R_wr_pitch")]
 COL_GRIPPER  = ["gripper_L", "gripper_R"]
 COL_POS_L    = ["eeL_x", "eeL_y", "eeL_z"]
 COL_RPY_L    = ["eeL_roll", "eeL_pitch", "eeL_yaw"]
 COL_POS_R    = ["eeR_x", "eeR_y", "eeR_z"]
 COL_RPY_R    = ["eeR_roll", "eeR_pitch", "eeR_yaw"]
-COL_META     = ["episode_index", "frame_index", "timestamp", "action_index"]
+COL_META     = ["episode_index", "frame_index", "timestamp"]
 
-ALL_COLS = COL_META + COL_JOINTS_L + COL_JOINTS_R + COL_GRIPPER \
-           + COL_POS_L + COL_RPY_L + COL_POS_R + COL_RPY_R
+ALL_COLS = COL_META + COL_JOINTS_L + COL_JOINTS_R + COL_STATE_L + COL_STATE_R \
+           + COL_GRIPPER + COL_POS_L + COL_RPY_L + COL_POS_R + COL_RPY_R
 
 
 def find_parquet_files(folder):
@@ -72,35 +77,32 @@ def process_episode(fpath, ik):
 
     rows = []
     for i in range(N):
-        a = df_in.iloc[i]["action"]           # action 信号 (16,)
+        a = df_in.iloc[i]["action"]             # action 信号 (16,)
+        s = df_in.iloc[i]["observation.state"]  # state (16,)
         ts = float(df_in.iloc[i]["timestamp"])
         fi = int(df_in.iloc[i]["frame_index"])
 
-        # 组装 19 维 q
+        # 组装 19 维 q（用 action 算 FK，得到 ee_pose）
         q = np.zeros(19)
-        q[5:12] = a[0:7]     # left arm from action
-        q[12:19] = a[7:14]   # right arm from action
-
-        # FK
+        q[5:12] = a[0:7]
+        q[12:19] = a[7:14]
         T_l, T_r = ik.get_fk_solution(q)
-        pos_l = T_l[:3, 3]
-        pos_r = T_r[:3, 3]
+        pos_l, pos_r = T_l[:3, 3], T_r[:3, 3]
         rpy_l = matrixToRpy(T_l[:3, :3])
         rpy_r = matrixToRpy(T_r[:3, :3])
 
-        row = {
-            "episode_index": ep,
-            "frame_index": fi,
-            "timestamp": ts,
-            "action_index": fi,
-        }
-        # left joint angles from action
+        row = {"episode_index": ep, "frame_index": fi, "timestamp": ts}
+        # action joint angles (14)
         for j, col in enumerate(COL_JOINTS_L):
             row[col] = float(a[j])
-        # right joint angles from action
         for j, col in enumerate(COL_JOINTS_R):
             row[col] = float(a[7 + j])
-        # gripper from action
+        # state joint angles (14)
+        for j, col in enumerate(COL_STATE_L):
+            row[col] = float(s[j])
+        for j, col in enumerate(COL_STATE_R):
+            row[col] = float(s[7 + j])
+        # gripper (from action)
         row["gripper_L"] = float(a[14])
         row["gripper_R"] = float(a[15])
         # left EE pose

@@ -29,7 +29,7 @@ hp = {
     "lr_gamma": 0.5,            # 学习率衰减系数
     "patience": 100,             # 早停容忍轮数
     "target_joint_deg": 0.1,    # 目标关节角平均误差（度），达标即停
-    "ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/0616_end2action_model_moredata",  # 模型权重 + 归一化参数路径
+    "ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/0616_end2action_model",  # 模型权重 + 归一化参数路径
     #"ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/end2action_model",
     "ckpt_name": "0616_model.pt", 
     #"ckpt_name": "best_model.pt",   # 模型保存文件名
@@ -50,11 +50,8 @@ hp = {
 
 paths = {
     "data_dir": "/home/ubuntu/code/End2Joint/data/0525_workflow_120_action_fk",
-    "joint_state_dir": "/home/ubuntu/code/End2Joint/data/0525_workflow_120_fk_results",
-    "extra_data_dirs": [
-        "/home/ubuntu/code/End2Joint/data/my_dataset_groot_fk_results",
-    ],
-    "results_dir": "/home/ubuntu/code/End2Joint/ik_net/0616_end2action_model_moredata",
+    "extra_data_dirs": [],
+    "results_dir": "/home/ubuntu/code/End2Joint/ik_net/0616_end2action_model",
     "project_dir": "/home/ubuntu/code/End2Joint",
     "urdf_path": "actibot_sdk/robot_description/v3/urdf/v3_urdf_251121-2.urdf",
 }
@@ -67,8 +64,12 @@ paths = {
 data_config = {
     "col_eeL": ["eeL_x", "eeL_y", "eeL_z", "eeL_roll", "eeL_pitch", "eeL_yaw"],
     "col_eeR": ["eeR_x", "eeR_y", "eeR_z", "eeR_roll", "eeR_pitch", "eeR_yaw"],
-    "col_joints_l": ["L_sh_pitch", "L_sh_roll", "L_sh_yaw",
+    "col_action_l": ["L_sh_pitch", "L_sh_roll", "L_sh_yaw",
                      "L_el_pitch", "L_el_roll", "L_wr_yaw", "L_wr_pitch"],
-    "col_joints_r": ["R_sh_pitch", "R_sh_roll", "R_sh_yaw",
+    "col_action_r": ["R_sh_pitch", "R_sh_roll", "R_sh_yaw",
                      "R_el_pitch", "R_el_roll", "R_wr_yaw", "R_wr_pitch"],
+    "col_state_l": ["state_L_sh_pitch", "state_L_sh_roll", "state_L_sh_yaw",
+                    "state_L_el_pitch", "state_L_el_roll", "state_L_wr_yaw", "state_L_wr_pitch"],
+    "col_state_r": ["state_R_sh_pitch", "state_R_sh_roll", "state_R_sh_yaw",
+                    "state_R_el_pitch", "state_R_el_roll", "state_R_wr_yaw", "state_R_wr_pitch"],
 }

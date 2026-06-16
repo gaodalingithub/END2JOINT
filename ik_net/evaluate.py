@@ -160,7 +160,7 @@ def main():
 
         # 构造样本
         ee_cols = data_config["col_eeL"] + data_config["col_eeR"]
-        joint_cols = data_config["col_joints_l"] + data_config["col_joints_r"]
+        joint_cols = data_config["col_action_l"] + data_config["col_action_r"]
         ee_t = df[ee_cols].values.astype(np.float64)
         joints_t = df[joint_cols].values.astype(np.float64)
         joints_prev = np.vstack([joints_t[0:1], joints_t[:-1]])
@@ -188,11 +188,11 @@ def main():
         if ep <= test_eps[4] if len(test_eps) > 4 else True:
             # 关节角对比
             plot_joint_comparison(
-                q_pred[:, :7], q_gt[:, :7], data_config["col_joints_l"],
+                q_pred[:, :7], q_gt[:, :7], data_config["col_action_l"],
                 f"Episode {ep} - Left Arm Joints (Pred vs GT)",
                 os.path.join(vis_dir, f"ep{ep:03d}_joints_L.png"))
             plot_joint_comparison(
-                q_pred[:, 7:], q_gt[:, 7:], data_config["col_joints_r"],
+                q_pred[:, 7:], q_gt[:, 7:], data_config["col_action_r"],
                 f"Episode {ep} - Right Arm Joints (Pred vs GT)",
                 os.path.join(vis_dir, f"ep{ep:03d}_joints_R.png"))
 
@@ -215,7 +215,7 @@ def main():
 
         # 打印第一帧的预测 vs 真实值（仅第一个测试 episode）
         if ep == test_eps[0]:
-            jn = data_config["col_joints_l"] + data_config["col_joints_r"]
+            jn = data_config["col_action_l"] + data_config["col_action_r"]
             print(f"  ├─ 首帧预测 vs 真实 (度 °):")
             for i in range(7):
                 print(f"  │  {jn[i]:>15s}: pred={np.degrees(q_pred[0,i]):>7.3f}  gt={np.degrees(q_gt[0,i]):>7.3f}  "
@@ -255,7 +255,7 @@ def main():
 
     # 各关节 MAE
     per_joint = np.mean([m["mae_per_joint"] for m in all_joint_metrics], axis=0)
-    jn = data_config["col_joints_l"] + data_config["col_joints_r"]
+    jn = data_config["col_action_l"] + data_config["col_action_r"]
     print(f"\n各关节 MAE (mrad):")
     for name, err in zip(jn, per_joint * 1e3):
         print(f"  {name:>15s}: {err:.2f}")
