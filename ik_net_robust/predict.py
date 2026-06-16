@@ -14,7 +14,7 @@
   python ik_net_robust/predict.py --count 1000           # 只测前 1000 帧
 
   python ik_net_robust/predict.py --data data/0602_test_for_net_action_fk --save ik_net_robust/save/0602_test_for_net_action_fk_results
-  python ik_net_robust/predict.py --fkfix --fkfix-step 5 --data data/0602_test_for_net_action_fk --save ik_net_robust/save/0602_test_for_net_action_fk_results_correct_5
+  python ik_net_robust/predict.py --fkfix --fkfix-step 10 --data data/0602_test_for_net_action_fk --save ik_net_robust/save/0602_test_for_net_action_fk_results_correct_10
 """
 import os
 import sys

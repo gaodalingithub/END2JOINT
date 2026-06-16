@@ -13,12 +13,12 @@ hp = {
 
     # ── 数据 ──
     "input_dim": 26,          # 输入: [eeL_xyzrpy(6), eeR_xyzrpy(6), prev_joints_L(7), prev_joints_R(7)]
-    "output_dim": 14,         # 输出: [joints_L(7), joints_R(7)]
+    "output_dim": 14,         # 输出: [joints_L(7), joints_R(7)] — control 信号 (action)
 
     # ── 模型架构 ──
     "hidden_dims": [400, 300, 200, 100, 50],   # 各隐藏层神经元数
     "dropout": 0.1,                             # Dropout 比率
-    "use_residual": True,                  # True = 残差连接, False = 直接预测
+    "use_residual": False,                 # True = 残差连接, False = 直接预测
 
     # ── 训练 ──
     "batch_size": 256,          # 批大小
@@ -29,8 +29,10 @@ hp = {
     "lr_gamma": 0.5,            # 学习率衰减系数
     "patience": 100,             # 早停容忍轮数
     "target_joint_deg": 0.1,    # 目标关节角平均误差（度），达标即停
-    "ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/results",  # 模型权重 + 归一化参数路径
-    "ckpt_name": "best_model.pt",   # 模型保存文件名
+    "ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/0616_end2action_model_moredata",  # 模型权重 + 归一化参数路径
+    #"ckpt_dir": "/home/ubuntu/code/End2Joint/ik_net/end2action_model",
+    "ckpt_name": "0616_model.pt", 
+    #"ckpt_name": "best_model.pt",   # 模型保存文件名
 
     # ── 数据划分 ──
     "train_ratio": 0.8,
@@ -48,7 +50,11 @@ hp = {
 
 paths = {
     "data_dir": "/home/ubuntu/code/End2Joint/data/0525_workflow_120_action_fk",
-    "results_dir": "/home/ubuntu/code/End2Joint/ik_net/end2action_model",
+    "joint_state_dir": "/home/ubuntu/code/End2Joint/data/0525_workflow_120_fk_results",
+    "extra_data_dirs": [
+        "/home/ubuntu/code/End2Joint/data/my_dataset_groot_fk_results",
+    ],
+    "results_dir": "/home/ubuntu/code/End2Joint/ik_net/0616_end2action_model_moredata",
     "project_dir": "/home/ubuntu/code/End2Joint",
     "urdf_path": "actibot_sdk/robot_description/v3/urdf/v3_urdf_251121-2.urdf",
 }

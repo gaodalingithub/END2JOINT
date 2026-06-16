@@ -7,7 +7,7 @@
   python ik_net/predict.py --time-only              # 只测推理速度
   python ik_net/predict.py --count 1000             # 只测前 1000 帧
   python ik_net/predict.py --data /path/to/data --save ./results  # 指定数据+保存结果
-  python ik_net/predict.py --data data/0602_test_for_net_action_fk --save ik_net/save/0602_test_for_net_action_fk_results
+  python ik_net/predict.py --data data/0602_test_for_net_action_fk --save ik_net/save/0616_test_for_net_action_fk_results_moredata
 """
 import os
 import sys

@@ -1,8 +1,9 @@
 """数据加载与预处理
 
 样本构造:
-  X = [ee_pose_t (12D), prev_joints_{t-1} (14D)]   → 26D
-  y = joints_t (14D)
+  X = [ee_pose_t(12), state_{t-1}(14)]  → 26D
+  y = action_t                          → 14D
+模型: action_t_pred = state_{t-1} + delta
 """
 import glob
 import os
@@ -39,17 +40,24 @@ def split_episodes(episodes, seed=hp["seed"]):
             sorted(eps[n_train + n_val:]))
 
 
-def episodes_to_arrays(episodes_dict, ep_list):
+def episodes_to_arrays(episodes_ee, episodes_state, ep_list):
+    """构造样本。
+
+    X = [ee_pose_t(12), state_{t-1}(14)]  → 26D    (ee + prev_joints from action/state FK)
+    y = action_t                           → 14D    (control signal from action FK)
+    模型: action_t_pred = state_{t-1} + delta
+    """
     all_X, all_y = [], []
     for ep in ep_list:
-        df = episodes_dict[ep]
-        n = len(df)
-        ee_t = df[EE_COLS].values.astype(np.float64)       # (n, 12)
-        joints_t = df[JOINT_COLS].values.astype(np.float64)  # (n, 14)
-        joints_prev = np.vstack([joints_t[0:1], joints_t[:-1]])  # (n, 14)
-        X = np.hstack([ee_t, joints_prev])  # (n, 26)
+        df_ee = episodes_ee[ep]
+        df_st = episodes_state[ep]
+        ee_t = df_ee[EE_COLS].values.astype(np.float64)          # (n, 12) ← action FK
+        action = df_ee[JOINT_COLS].values.astype(np.float64)      # (n, 14) ← action FK
+        state = df_st[JOINT_COLS].values.astype(np.float64)       # (n, 14) ← state FK
+        state_prev = np.vstack([state[0:1], state[:-1]])           # (n, 14) ← state_{t-1}
+        X = np.hstack([ee_t, state_prev])  # (n, 26)
         all_X.append(X)
-        all_y.append(joints_t)
+        all_y.append(action.copy())
     return np.vstack(all_X), np.vstack(all_y)
 
 
@@ -75,11 +83,33 @@ class IKDataset(Dataset):
 
 
 def build_dataloaders(data_dir):
-    episodes = load_episode_files(data_dir)
-    train_eps, val_eps, test_eps = split_episodes(episodes)
-    X_train, y_train = episodes_to_arrays(episodes, train_eps)
-    X_val, y_val = episodes_to_arrays(episodes, val_eps)
-    X_test, y_test = episodes_to_arrays(episodes, test_eps)
+    """加载数据。
+
+    ee_pose 和 action 来自 data_dir（action FK），
+    prev_joints 来自 joint_state_dir（state FK）。
+    """
+    from config import paths
+
+    episodes_ee = load_episode_files(data_dir)
+    state_dir = paths.get("joint_state_dir", data_dir)
+    episodes_state = load_episode_files(state_dir)
+    if state_dir != data_dir:
+        print(f"  ee/action: {data_dir}  |  prev_state: {state_dir}")
+
+    # 合并额外数据到两个 dict
+    extra_dirs = paths.get("extra_data_dirs", [])
+    if extra_dirs:
+        ep_offset = max(max(episodes_ee.keys()), max(episodes_state.keys())) + 1
+        for edir in extra_dirs:
+            for ep_idx, df in load_episode_files(edir).items():
+                episodes_ee[ep_offset + ep_idx] = df
+                episodes_state[ep_offset + ep_idx] = df
+        print(f"  合并额外数据: {sum(1 for d in extra_dirs for _ in load_episode_files(d))} episodes")
+
+    train_eps, val_eps, test_eps = split_episodes(episodes_ee)
+    X_train, y_train = episodes_to_arrays(episodes_ee, episodes_state, train_eps)
+    X_val, y_val = episodes_to_arrays(episodes_ee, episodes_state, val_eps)
+    X_test, y_test = episodes_to_arrays(episodes_ee, episodes_state, test_eps)
     scaler = Scaler().fit(X_train, y_train)
 
     def make_loader(X, y, shuffle):

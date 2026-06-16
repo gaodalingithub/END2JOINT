@@ -22,16 +22,19 @@ End2Joint/
 │   └── visualize_fk.py               # Meshcat 可视化
 ├── docs/                 # 文档
 ├── ik_ee2joint/          # 简化版 IK：12D ee_pose → 14D joints（无时序信息）
-├── ik_net/               # 标准版 IK：26D ee_pose+prev_joints → 14D joints
-│   ├── config.py                     # 超参数配置（唯一需修改的文件）
+├── ik_gru/               # GRU 时序记忆版（实验性）
+├── ik_net/               # 标准版 IK：26D → 14D control 信号
+│   ├── config.py                     # 超参数配置
+│   ├── dataloader.py                 # 数据加载（双源：action FK + state FK）
 │   ├── model.py                      # ResidualMLP 模型
 │   ├── train.py                      # 训练循环
-│   ├── evaluate.py                   # 测试评估 + 可视化
-│   ├── predict.py                    # 推理测试（单步预测）
-│   ├── predict_ar.py                 # 自回归推理（模拟部署）
-│   ├── playback_predictions.py       # ROS2 回放预测结果到机器人
-│   └── visualize_predictions.py      # 仿真可视化预测结果
-├── ik_net_robust/        # 改进版：噪声注入 + FK 修正抗自回归累积
+│   ├── evaluate.py                   # 测试评估
+│   ├── predict.py                    # 单步推理测试
+│   ├── predict_ar.py                 # 自回归推理
+│   ├── predict_new_data.py           # 新数据集预测
+│   ├── playback_predictions.py       # ROS2 回放
+│   └── visualize_predictions.py      # 仿真可视化
+├── ik_net_robust/        # 改进版：噪声注入 + FK 修正
 │   ├── config.py                     # 超参数配置
 │   ├── dataloader.py                 # 数据加载 + 噪声注入
 │   ├── model.py                      # ResidualMLP 模型
@@ -45,11 +48,12 @@ End2Joint/
 
 ## 模型对比
 
-| 模型 | 输入 | 输出 | 核心特点 | 关节角精度 | FK 位置精度 |
-|------|------|------|---------|-----------|-----------|
-| **ik_ee2joint** | 12D ee_pose | 14D joints | 无时序信息，直接映射 | ~1.0° | ~14mm |
-| **ik_net** | 26D ee_pose + prev_joints | 14D joints | **残差连接**，利用帧间连续性 | **0.16°** | **2.6mm** |
-| **ik_net_robust** | 26D ee_pose + prev_joints | 14D joints | 噪声注入 + FK 修正抗自回归漂移 | 0.16°（FK修正后 0.36°） | 1.4mm |
+| 模型 | 输入 | 输出 | 核心特点 |
+|------|------|------|---------|
+| **ik_ee2joint** | 12D ee_pose | 14D joints | 无时序信息，直接映射 |
+| **ik_net** | 26D ee_pose + prev_joints | **14D control 信号** | 残差连接 + 双源数据（action FK + state FK） |
+| **ik_net_robust** | 26D ee_pose + prev_joints | 14D joints | 噪声注入 + FK 修正 |
+| **ik_gru** | 26D ee_pose + prev_joints | 14D joints | GRU 时序记忆（实验性） |
 
 ## 工作原理
 
@@ -99,10 +103,24 @@ frame_index        → int64        帧编号
 
 ### FK 结果格式
 
+两种 FK 结果文件格式一致，列数相同：
+
 ```
 joints_14:  L_sh_pitch ~ R_wr_pitch  (rad)
 ee_12:      eeL_xyzrpy + eeR_xyzrpy  (m / rad)
 gripper_2:  gripper_L, gripper_R
+```
+
+| 文件 | 数据来源 | 用途 |
+|------|---------|------|
+| `*_fk_results/` | observation.state | 实际关节角（prev_joints、评估基准） |
+| `*_action_fk/` | action 控制信号 | 末端位姿（ee_pose 输入）、训练目标（y） |
+
+### 训练样本构造
+
+```python
+X = [ee_pose_from_action, prev_joints_from_state]   # 26D
+y = action                                            # 14D control 信号
 ```
 
 ## 环境配置
@@ -157,9 +175,21 @@ python ik_net/playback_predictions.py path/to/predictions.parquet
 
 ## 精度结果
 
-| 模式 | 关节角 MAE | FK 位置误差 | FK 姿态误差 | 推理速度 |
-|------|-----------|-----------|-----------|---------|
-| ik_net 单步预测 | 0.22° | 2.6 mm | 8.9 mrad | 64 μs |
-| ik_net 自回归 | 5.88° | 49.8 mm | — | 64 μs |
-| ik_net_robust 自回归(+噪声) | 3.74° | 24.0 mm | — | 64 μs |
-| ik_net_robust +FK修正 | **0.36°** | **0.04 mm** | **0.03 mrad** | **170 μs** |
+### 单步预测（使用真实上一帧关节角）
+
+| 模型 | 关节角 MAE | FK 位置误差 |
+|------|-----------|-----------|
+| ik_ee2joint（无时序） | ~1.0° | ~14mm |
+| ik_net / ik_net_robust（残差连接） | **0.15~0.22°** | **~1.4mm** |
+
+### 自回归推理（实际部署，使用模型自己的预测）
+
+| 模式 | 关节角 MAE | FK 位置误差 | 单帧耗时 |
+|------|-----------|-----------|---------|
+| ik_net（无改进） | 5.76° | 59.9 mm | 60 μs |
+| ik_net_robust（+噪声注入） | 2.87° | 15.5 mm | 60 μs |
+| +FK修正(每10帧) | 0.84° | — | 76 μs |
+| +FK修正(每5帧) | 0.60° | — | **92 μs** |
+| **+FK修正(每帧)** | **0.32°** | **0.06 mm** | 219 μs |
+
+所有方案远快于机器人 30Hz 控制周期（33ms）。推荐 **FK修正(每5帧)** 作为精度与速度的最佳平衡。

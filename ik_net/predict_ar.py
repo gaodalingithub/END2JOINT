@@ -5,7 +5,7 @@
 
 用法:
   conda activate actibot_sdk
-  python ik_net/predict_ar.py --data data/0602_test_for_net_action_fk --save ik_net/save/0602_test_for_net_action_fk_results_ar
+  python ik_net/predict_ar.py --data data/0602_test_for_net_action_fk --save ik_net/save/0602_test_for_net_action_fk_results_ar_moredata  
   python ik_net/predict_ar.py --data /path/to/data --fkfix         # 启用 FK 修正
   python ik_net/predict_ar.py --count 1000
 """
