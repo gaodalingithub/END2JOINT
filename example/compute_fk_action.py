@@ -14,7 +14,7 @@
 示例:
   python example/compute_fk_action.py data/0525_workflow_120
   python example/compute_fk_action.py data/0525_workflow_120 -o data/0525_workflow_120_action_fk
-  python example/compute_fk_action.py data/0602_test_for_net -o data/0602_test_for_net_action_fk
+  python example/compute_fk_action.py data/my_dataset_groot -o data/my_dataset_groot_action_fk
   python example/compute_fk_action.py data/0602_test_for_net --format csv
 """
 import sys, os, glob, argparse
