@@ -11,7 +11,7 @@
   python ik_net/predict.py --save ./results         # 保存预测结果
   python ik_net/predict.py --data /path/to/data     # 指定数据集
 
-  python ik_net/predict.py --data data/0602_test_for_net_action_fk --save ik_net/save/0602_test_for_net_action_fk_results
+  python ik_net/predict.py --data data/0602_test_for_net_action_fk --save ik_net/save/0602_test_for_net_action_fk_results_moredata
 """
 import os
 import sys

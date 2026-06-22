@@ -1,92 +1,74 @@
 # IK-Net-Robust: 抗自回归误差累积的改进版 IK
 
-基于 `ik_net`，加入两种改进方法解决自回归推理时的误差累积问题。
+基于 `ik_net`，加入噪声注入训练和 FK 引导修正，解决自回归推理时的误差累积问题。
 
 ## 问题
 
-实际部署时只有末端位姿数据可用，上一帧关节角只能使用模型自己的上一步预测值。这导致分布偏移——模型训练时看到的是真实上一帧关节角，推理时看到的是有误差的预测值，误差逐帧累积：
+实际部署时上一帧关节角只能使用模型自己的上一步预测值，导致分布偏移：
 
 ```
-帧 0: q_pred = MLP(ee, 真实_q_0)     ← 训练分布内
-帧 1: q_pred = MLP(ee, q_pred_0)     ← q_pred_0 有误差 → 偏离训练分布
-帧 2: q_pred = MLP(ee, q_pred_1)     ← 误差累积
+帧 0: 用真实 state_0             → 分布内
+帧 1: 用模型预测的 action_0      → 偏离训练分布
+帧 2: 用模型预测的 action_1      → 误差累积
 ```
 
-结果是自回归 Joint MAE 从 0.29° 膨胀到 **5.88°**。
+自回归 Joint MAE 从 ~1° 膨胀到 **~6°**。
 
 ## 改进方法
 
 ### 方法一：噪声注入训练
 
-训练时对 `prev_joints` 添加高斯噪声，让模型学会在输入不精确时仍能正确输出。
+训练时对 `state_prev` 添加高斯噪声（±2.9°），让模型学会在输入不精确时仍能正确输出 action。
 
-```
-数据加载时:
-  50% 概率 → joints_prev += randn(14) × 0.05   (±2.9°)
-  50% 概率 → 保持原值
-损失: MSE(q_pred, q_gt)   ← 目标值始终是真实关节角
-```
-
-**效果**：自回归误差从 5.88° 降到 **3.74°**（↓36%）。
+**效果**：自回归误差从 ~6° 降到 **~3.7°**（↓38%）。
 
 ### 方法二：FK 引导修正（后处理）
 
-推理时每帧用 Pinocchio FK + Jacobian 修正 MLP 的预测：
+推理时用 Pinocchio Jacobian 修正 MLP 的预测：
 
 ```
 MLP → q_pred → FK(q_pred) → ee_pred
                                ↓
-                    与 ee_target 比较 → 6D 误差 (位置+姿态)
+                    与 ee_target 比较 → 6D 误差
                                ↓
-                    6×7 Jacobian 阻尼伪逆 → Δq
+                    阻尼伪逆 J⁺ → Δq
                                ↓
                     q_corrected = q_pred + Δq
 ```
 
-**效果**：自回归误差从 5.88° 骤降到 **0.355°**（↓94%），甚至超过使用真实上一帧关节角的基线（0.645°）。
+**效果**：自回归误差从 ~6° 骤降到 **~0.36°**（↓94%）。
 
-### 两种方法对比
+### 精度对比
 
-| 方法 | 自回归 Joint MAE | 单帧额外耗时 |
-|------|-----------------|------------|
-| 无改进 | 5.88° | 0 |
-| 噪声注入 | 3.74° | 0 |
-| **FK 修正** | **0.355°** | **~110μs** |
-| 噪声注入 + FK 修正 | **0.355°** | ~110μs |
+| 方法 | 自回归 Joint MAE | 单帧耗时 |
+|------|-----------------|---------|
+| 无改进 | ~6° | 60 μs |
+| 噪声注入 | ~3.7° | 60 μs |
+| **FK 修正(每5帧)** | **~0.6°** | **92 μs** |
+| **FK 修正(每帧)** | **~0.36°** | 170 μs |
 
-### 推理速度实测对比
+## 数据格式
 
-| 方法 | 单帧耗时 | 末端精度 | 说明 |
-|------|---------|---------|------|
-| 纯 MLP（无修正） | **~60 μs** | 3.5° / 24mm | 最快但精度差 |
-| 纯 FK 修正（从零开始） | **~500 μs** | 0.03mm | 需 50 次迭代从零收敛 |
-| **MLP + FK 修正** | **~170 μs** | **0.03mm** | MLP 提供好起点，仅需 1-5 次迭代 |
+与 `ik_net` 一致，单文件包含全部所需数据（由 `compute_fk_action.py` 生成）：
 
-MLP + FK 修正比纯 FK 从零开始快 **3 倍**（因为 MLP 提供好的初始猜测），比纯 MLP 慢 110μs 但精度提升 **10 倍以上**。三种方案都远快于机器人 30Hz 控制周期（33ms）。
-
-## 配置
-
-所有参数集中在 `config.py`：
-
-```python
-hp = { ... }       # 超参数（架构、训练、噪声注入等）
-paths = { ... }    # 路径（训练数据、测试数据、结果等）
-data_config = { ... }  # 数据列名
 ```
-
-修改 `paths["test_data_dir"]` 可切换测试集。
+eeL/R_xyzrpy      → 输入 ee_pose_t (12D)
+state_*           → 输入 state_{t-1} (14D)
+L/R_sh_pitch...   → 目标 action_t (14D)
+```
 
 ## 文件说明
 
 | 文件 | 说明 |
 |------|------|
-| `config.py` | 超参数配置（唯一需修改的文件） |
+| `config.py` | 超参数配置 |
 | `dataloader.py` | 数据加载 + 噪声注入 |
 | `model.py` | ResidualMLP 模型 |
 | `train.py` | 训练循环 |
-| `evaluate.py` | 测试评估 + 可视化 |
-| `fk_utils.py` | Pinocchio FK 封装 + FK 修正函数 |
-| `test_ar.py` | 自回归精度测试（含可选 FK 修正） |
+| `evaluate.py` | 测试评估 |
+| `fk_utils.py` | Pinocchio FK + FK 修正函数 |
+| `predict.py` | 自回归推理 + FK 修正 + 保存结果 |
+| `test_ar.py` | 自回归精度测试 |
 
 ## 用法
 
@@ -94,12 +76,19 @@ data_config = { ... }  # 数据列名
 # 训练
 python ik_net_robust/train.py
 
-# 测试自回归精度
+# 自回归推理 + 精度评估
+python ik_net_robust/predict.py
+
+# 启用 FK 修正（每帧）
+python ik_net_robust/predict.py --fkfix
+
+# FK 修正（每5帧）
+python ik_net_robust/predict.py --fkfix --fkfix-step 5
+
+# 保存预测结果
+python ik_net_robust/predict.py --data /path/to/data --save ./results
+
+# 自回归精度测试
 python ik_net_robust/test_ar.py
-
-# 测试 FK 修正效果
 python ik_net_robust/test_ar.py --fkfix
-
-# 指定测试数据集
-python ik_net_robust/test_ar.py --data /path/to/data
 ```

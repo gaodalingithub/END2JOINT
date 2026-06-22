@@ -1,8 +1,8 @@
 """数据加载与预处理
 
 样本构造:
-  X = [ee_pose_t (12D), prev_joints_{t-1} (14D)]   → 26D
-  y = joints_t (14D)
+  X = [ee_pose_t(12), state_{t-1}(14)]  → 26D
+  y = action_t                           → 14D
 """
 import glob
 import os
@@ -15,7 +15,8 @@ from sklearn.preprocessing import StandardScaler
 from config import hp, data_config
 
 EE_COLS = data_config["col_eeL"] + data_config["col_eeR"]
-JOINT_COLS = data_config["col_joints_l"] + data_config["col_joints_r"]
+ACTION_COLS = data_config["col_action_l"] + data_config["col_action_r"]
+STATE_COLS  = data_config["col_state_l"] + data_config["col_state_r"]
 
 
 def load_episode_files(data_dir):
@@ -40,29 +41,29 @@ def split_episodes(episodes, seed=hp["seed"]):
 
 
 def episodes_to_arrays(episodes_dict, ep_list, add_noise=False):
-    """构造样本，可对 prev_joints 添加噪声模拟自回归推理误差。
+    """构造样本，可对 state_prev 添加噪声。
 
-    add_noise=True: 以 noise_prob 概率对 prev_joints 加高斯噪声，
-    使模型学会容忍不精确的输入，降低自回归推理时的误差累积。
+    X = [ee_pose_t(12), state_{t-1}(14)]  → 26D
+    y = action_t                           → 14D
     """
     rng = np.random.RandomState()
     all_X, all_y = [], []
     for ep in ep_list:
         df = episodes_dict[ep]
         n = len(df)
-        ee_t = df[EE_COLS].values.astype(np.float64)       # (n, 12)
-        joints_t = df[JOINT_COLS].values.astype(np.float64)  # (n, 14)
-        joints_prev = np.vstack([joints_t[0:1], joints_t[:-1]])  # (n, 14)
+        ee_t = df[EE_COLS].values.astype(np.float64)            # (n, 12)
+        state = df[STATE_COLS].values.astype(np.float64)        # (n, 14)
+        action = df[ACTION_COLS].values.astype(np.float64)      # (n, 14)
+        state_prev = np.vstack([state[0:1], state[:-1]])         # (n, 14)
 
         if add_noise:
-            # 随机选取部分帧，对 prev_joints 添加高斯噪声
             mask = rng.rand(n) < hp["noise_prob"]
-            noise = rng.randn(*joints_prev.shape) * hp["noise_scale"]
-            joints_prev[mask] = joints_prev[mask] + noise[mask]
+            noise = rng.randn(*state_prev.shape) * hp["noise_scale"]
+            state_prev[mask] = state_prev[mask] + noise[mask]
 
-        X = np.hstack([ee_t, joints_prev])  # (n, 26)
+        X = np.hstack([ee_t, state_prev])  # (n, 26)
         all_X.append(X)
-        all_y.append(joints_t)
+        all_y.append(action.copy())
     return np.vstack(all_X), np.vstack(all_y)
 
 

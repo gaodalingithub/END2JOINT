@@ -38,7 +38,7 @@ from model import ResidualMLP
 from fk_utils import load_ik, compute_ee_pose, fk_correction
 
 EE_COLS = data_config["col_eeL"] + data_config["col_eeR"]
-JOINT_COLS = data_config["col_joints_l"] + data_config["col_joints_r"]
+JOINT_COLS = data_config["col_action_l"] + data_config["col_action_r"]
 
 
 def main():
@@ -175,7 +175,7 @@ def main():
     # ── 保存预测结果 ──
     if args.save:
         os.makedirs(args.save, exist_ok=True)
-        jn = data_config["col_joints_l"] + data_config["col_joints_r"]
+        jn = data_config["col_action_l"] + data_config["col_action_r"]
 
         meta_cols = ["episode_index", "frame_index", "timestamp", "gripper_L", "gripper_R"]
         meta_dfs = []
