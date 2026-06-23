@@ -28,10 +28,17 @@ IK-Net 模型:
   python examples/ACTIBOT/ik_validation_server.py \
     --parquet save/episode_000000_action_fk.parquet
 
+  # 每帧 FK 修正
+  python server/ik_validation_server.py --parquet save/episode_000000_action_fk.parquet --fkfix-step 1
+
+  # 每 5 帧修正一次（推荐平衡方案）
+  python server/ik_validation_server.py --parquet save/episode_000000_action_fk.parquet --fkfix-step 5  
+
   # 推理延时
-  python server/ik_validation_server.py \
+  python server/ik_validation_fk_server.py \
     --parquet data/0602_test_for_net_action_fk/episode_000000_action_fk.parquet \
-    --inference-delay 0.05
+    --inference-delay 0.05 \
+    --fkfix-step 1
 
   # 机器人端
   python main_actibot.py \
@@ -137,8 +144,24 @@ class IKValidationServer:
 
     def __init__(self, parquet_path, ee_parquet_path=None,
                  model_ckpt_dir=None,
-                 model_ckpt_name=None, device=None):
+                 model_ckpt_name=None, device=None, fkfix_step=0):
         self.device = torch.device(device)
+        self.fkfix_step = fkfix_step
+        self.fkfix_count = 0
+        self.ik = None
+
+        # FK 修正（可选）
+        if self.fkfix_step > 0:
+            import sys as _sys, os as _os
+            _root = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+            _rbt = _os.path.join(_root, "ik_net_robust")
+            for _p in [_root, _rbt]:
+                if _p not in _sys.path:
+                    _sys.path.insert(0, _p)
+            from fk_utils import load_ik, fk_correction
+            self.fk_ik = load_ik()
+            self.fk_correction = fk_correction
+            print(f"[FK] FK correction enabled (every {fkfix_step} frames)")
 
         # ── 加载 IK-Net 模型 ──
         ckpt_path = os.path.join(model_ckpt_dir, model_ckpt_name)
@@ -186,16 +209,9 @@ class IKValidationServer:
     # ── 从观测提取真实关节 ──
     @staticmethod
     def _flatten_joint_value(val):
-        """将任意嵌套结构的关节值展平为一维 float64 数组。
-
-        msgpack 序列化后未正确解码时，值可能是形如
-        {'nd': 3, 'type': 'float32', 'shape': [1,1,7], 'data': b'...'} 的字典，
-        需要手动解码回 numpy 数组再展平。
-        """
-        # ── 处理 dict 格式的编码数组 ──
+        """将任意嵌套结构的关节值展平为一维 float64 数组。"""
         if isinstance(val, dict):
-            # 格式1: {'__ndarray_class__': True, 'as_npy': b'\x93NUMPY...'}
-            # PolicyClient 使用 NPY 原生格式编码 numpy 数组
+            # 格式1: {'__ndarray_class__': True, 'as_npy': b'NUMPY...'}
             as_npy = val.get('as_npy')
             if as_npy is not None and isinstance(as_npy, (bytes, bytearray)):
                 import io
@@ -205,7 +221,7 @@ class IKValidationServer:
                     return arr.astype(np.float64)
                 return arr.ravel().astype(np.float64)
 
-            # 格式2: msgpack_numpy 标准格式 {'nd': 3, 'type': 'float32', 'shape': [...], 'data': b'...'}
+            # 格式2: msgpack_numpy 标准格式
             for data_key in ('data', b'data'):
                 raw = val.get(data_key)
                 if raw is not None:
@@ -220,19 +236,14 @@ class IKValidationServer:
                     arr = arr.squeeze()
                     if arr.ndim == 1 and arr.dtype.kind in ('f', 'i', 'u'):
                         return arr.astype(np.float64)
-                    # squeezed 后仍非 1D → ravel
                     return arr.ravel().astype(np.float64)
 
-        # ── numpy 数组 / 嵌套列表 ──
         arr = np.asarray(val)
-        # 已经是数值型一维数组
         if arr.ndim == 1 and arr.dtype.kind in ('f', 'i', 'u'):
             return arr.astype(np.float64)
-        # 去除所有单维度
         arr = np.asarray(val).squeeze()
         if arr.ndim == 1 and arr.dtype.kind in ('f', 'i', 'u'):
             return arr.astype(np.float64)
-        # object 数组或高维：递归拼接
         if arr.dtype.kind == 'O' or arr.ndim > 1:
             try:
                 flat = np.concatenate([np.asarray(x).ravel() for x in np.asarray(val).ravel()])
@@ -240,7 +251,6 @@ class IKValidationServer:
                     return flat.astype(np.float64)
             except Exception:
                 pass
-        # 最后兜底：正则提取所有数值
         import re
         nums = re.findall(r'-?\d+\.?\d*(?:[eE][+-]?\d+)?', str(val))
         if nums:
@@ -261,10 +271,8 @@ class IKValidationServer:
                     left_grip[-1:] if len(left_grip) > 0 else [0.0],
                     right_grip[-1:] if len(right_grip) > 0 else [0.0],
                 ]).astype(np.float64)
-            # Debug: 打印实际形状帮助排查
             print(f"[DEBUG] 关节值形状异常: left_arm={left_arm.shape}({left_arm.dtype}) "
                   f"right_arm={right_arm.shape}({right_arm.dtype})")
-            print(f"[DEBUG] left_arm raw={state.get('left_arm_joint_positions', 'MISSING')}")
         except Exception as e:
             print(f"[DEBUG] 关节提取异常: {e}")
         return None
@@ -320,6 +328,14 @@ class IKValidationServer:
         gripper = self._get_gripper(idx)
         prev_14 = real_joints_16[:14]
         pred_14 = self.predict(ee_pose, prev_14)
+
+        # FK 修正（每 fkfix_step 帧执行一次）
+        if self.fkfix_step > 0 and self.fkfix_count % self.fkfix_step == 0:
+            qL, qR, _, _ = self.fk_correction(self.fk_ik, pred_14, ee_pose)
+            pred_14[:7] = qL
+            pred_14[7:] = qR
+        self.fkfix_count += 1
+
         pred_16 = np.concatenate([pred_14, gripper])
 
         self.records.append({
@@ -422,16 +438,11 @@ class IKValidationServer:
 
                     # ── 提取关节状态（尝试多种路径）──
                     joint_state_data = None
-
-                    # 路径1: req.data.state
                     joint_state_data = req.get("data", {}).get("state")
-                    # 路径2: req.data.observation.state（VLA 标准格式）
                     if not joint_state_data:
                         joint_state_data = req.get("data", {}).get("observation", {}).get("state")
-                    # 路径3: req.state
                     if not joint_state_data:
                         joint_state_data = req.get("state")
-                    # 路径4: req.data.observation 本身含有关节字段
                     if not joint_state_data:
                         obs = req.get("data", {}).get("observation", {})
                         if isinstance(obs, dict) and any(k in obs for k in
@@ -459,7 +470,8 @@ class IKValidationServer:
                           f"frame={self.frame_index}/{self.total_frames}")
 
                     result = [action_dict, status]
-                    if status.get("status") == "done":
+                    info = status
+                    if info.get("status") == "done":
                         print("=" * 55)
                         print(f"[Server] 所有 {self.total_frames} 帧处理完成")
                         print("[Server] 正在保存记录...")
@@ -525,6 +537,8 @@ def main():
     p.add_argument("--device", default="cuda:0", help="cpu or cuda:0")
     p.add_argument("--inference-delay", type=float, default=0.03,
                    help="Simulated inference delay (s)")
+    p.add_argument("--fkfix-step", type=int, default=0,
+                   help="FK 修正间隔帧数（0=关闭，1=每帧，5=每5帧）")
     args = p.parse_args()
 
     sv = IKValidationServer(
@@ -533,6 +547,7 @@ def main():
         model_ckpt_dir=args.model_dir,
         model_ckpt_name=args.model_name,
         device=args.device,
+        fkfix_step=args.fkfix_step,
     )
     sv.inference_delay = args.inference_delay
     if args.inference_delay > 0:
